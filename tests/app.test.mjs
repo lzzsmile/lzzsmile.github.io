@@ -134,3 +134,23 @@ test('detail edit flow preserves original years and keeps the year editable',asy
 });
 
 test('project paths isolate record keys while directory and index entries agree',()=>{const a=harness([],{appURL:'https://example.test/a/'}),b=harness([],{appURL:'https://example.test/b/index.html?launch=1'}),c=harness([],{appURL:'https://example.test/a/index.html'});assert.equal(a.run('KEY'),'niannian.days.v1:/a/');assert.equal(b.run('KEY'),'niannian.days.v1:/b/');assert.equal(a.run('KEY'),c.run('KEY'));});
+
+test('new recurrence editor, detail, persistence and backup remain consistent',async()=>{
+ for(const [repeat,label] of [['daily','每天'],['weekly','每周'],['monthly','每月']]){
+  assert.ok(html.includes(`value="${repeat}"`));
+  const h=harness([event('first',{repeat})]);h.run("today='2026-01-01';showDetail('first')");
+  assert.ok(h.node('#detail-body').innerHTML.includes(`<span>重复</span><strong>${label}</strong>`));
+  assert.ok(h.node('#detail-body').innerHTML.includes('<span>下一次</span>'));
+  h.run('openEditor(events[0])');assert.equal(h.node('#repeat').value,repeat);
+  assert.equal(h.node('#short-month-field').hidden,repeat!=='monthly');
+  await h.node('#event-form').emit('submit');assert.equal(h.node('#form-error').textContent,'');
+  assert.equal(JSON.parse(h.saved).events[0].repeat,repeat);
+  const restored=harness([],{raw:h.saved});assert.equal(restored.run('events[0].repeat'),repeat);
+ }
+});
+test('large frequent calendar export is blocked before download and can be reduced',async()=>{
+ const h=harness(Array.from({length:6},(_,i)=>event('e'+i,{repeat:'daily'})));
+ h.run('prepareExport(events)');assert.equal(h.node('#download-calendar').disabled,true);assert.match(h.node('#export-error').textContent,/20,000/);
+ h.run('prepareExport([events[0]])');assert.equal(h.node('#download-calendar').disabled,false);
+ await h.node('#download-calendar').emit('click');assert.equal(h.downloads.length,1);assert.equal(h.writes.length,0);
+});
