@@ -66,10 +66,10 @@ test('garden keyboard Enter and Escape retain the dialog trigger without suppres
   h.run('lastPageTrigger=trigger;show("sheet")');h.listeners.keydown({key:'Escape'});h.run('close()');
   assert.equal(h.document.activeElement,h.trigger);assert.equal(h.trigger.pointerFocus,false);
 });
-test('garden settings remove the duplicate profile navigation and retain three settings',()=>{
+test('garden settings remove the duplicate profile navigation and retain four settings',()=>{
   const block=source.slice(source.indexOf('function settings(){'),source.indexOf('function personalize()'));
   assert.doesNotMatch(block,/profile-card|我的星愿花园/);
-  assert.equal((block.match(/settingsRow\(/g)||[]).length,3);
+  assert.equal((block.match(/settingsRow\(/g)||[]).length,4);
   assert.match(block,/个性化/);assert.match(block,/数据与使用/);
 });
 

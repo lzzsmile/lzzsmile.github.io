@@ -18,7 +18,7 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port+'/star-garden/';
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true,locale:'zh-CN',reducedMotion:'reduce',serviceWorkers:'block'});
 const page=await context.newPage(),errors=[],external=[],results=[];
 page.on('pageerror',e=>errors.push(e.message));
@@ -34,9 +34,9 @@ const checkReturn=async selector=>{
 };
 try{
   await page.goto(base+'#settings');
-  await step('settings has three direct entries and no duplicate garden/profile card',async()=>{
+  await step('settings has four direct entries and no duplicate garden/profile card',async()=>{
     assert.equal(await page.locator('.profile-card').count(),0);
-    assert.equal(await page.locator('.settings-row').count(),3);
+    assert.equal(await page.locator('.settings-row').count(),4);
     assert.equal(await page.locator('h1').innerText(),'我的');
     assert.equal(await saved(),null);
   });
