@@ -21,6 +21,18 @@ const base='http://127.0.0.1:'+server.address().port+'/star-garden/';
 const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true,locale:'zh-CN',reducedMotion:'reduce',serviceWorkers:'block'});
 const page=await context.newPage(),errors=[],external=[],results=[];
+const touch=await context.newCDPSession(page);
+const swipe=async({x=6,direction=-1,cancel=false}={})=>{
+  const start=direction<0?420:140;
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:start}]});
+  for(let step=1;step<=7;step++){
+    const y=start+direction*step*40;
+    await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y}]});
+    await page.waitForTimeout(20);
+  }
+  await touch.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]});
+  await page.waitForTimeout(150);
+};
 page.on('pageerror',e=>errors.push(e.message));
 page.on('request',r=>{if(!r.url().startsWith(base)&&!r.url().startsWith('blob:'))external.push(r.url());});
 const step=async(name,fn)=>{await fn();results.push(name);console.log('PASS '+name);};
@@ -48,18 +60,36 @@ try{
     await page.locator(selector).first().dispatchEvent('click');
     await dismiss();await checkReturn(selector);assert.equal((await focus()).ring,'none');
   });
+  await step('native touch close then scroll keeps the example trigger quiet',async()=>{
+    await page.setViewportSize({width:390,height:568});
+    const selector='.example-row';
+    await page.locator(selector).first().tap();await dismiss();await checkReturn(selector);
+    assert.equal((await focus()).ring,'none');
+    const before=await page.evaluate(()=>scrollY);
+    await swipe();await checkReturn(selector);
+    const f=await focus();
+    assert.equal(f.quiet,true);assert.equal(f.ring,'none');
+    assert.ok(await page.evaluate(()=>scrollY)>before,'real touch scrolling moves the page');
+    await page.setViewportSize({width:390,height:844});
+  });
   const data=emptyState();
   const habit=addWish(data,{title:'焦点回归：读两页书',note:'虚构测试记录',category:'self',kind:'habit',target:7});
   const completed=addWish(data,{title:'焦点回归：看星星',note:'',category:'together',kind:'once',target:1});
   const c=checkIn(data,completed.id,'',new Date('2026-10-01T12:00:00'));finishCelebration(data,c.celebration.id,'hug');
   const pending=addWish(data,{title:'焦点回归：去散步',note:'',category:'self',kind:'once',target:1});checkIn(data,pending.id,'',new Date('2026-10-02T12:00:00'));
+  // Enough fictional records to require real scrolling on every page.
+  for(let i=0;i<6;i++){
+    addWish(data,{title:'滚动回归愿望 '+i,note:'',category:'self',kind:'habit',target:7});
+    const w=addWish(data,{title:'滚动回归印记 '+i,note:'',category:'together',kind:'once',target:1});
+    const finished=checkIn(data,w.id,'',new Date('2026-10-01T12:00:00'));finishCelebration(data,finished.celebration.id,'hug');
+  }
   const raw=JSON.stringify(data);
   await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:STORAGE_KEY,value:raw});await page.reload();
   const cases=[
     ['home','.companion-row'],['home','.wish-main'],['home','[data-action="checkin"]'],['home','[data-action="celebrate"]'],
     ['wishes','[data-action="new"]'],['wishes','.wish-main'],['wishes','[data-action="checkin"]'],
     ['stamps','.stamp-card'],['stamps','[data-action="celebrate"]'],
-    ['settings','[data-action="personalize"]'],['settings','[data-action="backup"]'],['settings','[data-action="install-help"]']
+    ['settings','[data-action="personalize"]'],['settings','[data-action="backup"]'],['settings','[data-action="install-help"]'],['settings','[data-action="updates"]']
   ];
   for(const [route,selector] of cases){
     await step(route+' '+selector+' survives Safari-style unfocused button activation',async()=>{
@@ -72,25 +102,77 @@ try{
     });
   }
   for(const [route,selector] of cases){
+    await step(route+' '+selector+' stays quiet through real touch close, scrolling and repeated gestures',async()=>{
+      await page.setViewportSize({width:390,height:568});await nav(route);
+      await page.locator(selector).first().tap();await dismiss();await checkReturn(selector);
+      assert.equal((await focus()).quiet,true);
+      // Use whichever direction has space after the tapped control scrolled into view.
+      const {y,max}=await page.evaluate(()=>({y:scrollY,max:document.documentElement.scrollHeight-innerHeight}));
+      assert.ok(max>0,route+' has actual scrollable content');
+      await swipe({direction:y>max/2?1:-1});await checkReturn(selector);
+      assert.notEqual(await page.evaluate(()=>scrollY),y,route+' actually scrolled');
+      assert.equal((await focus()).ring,'none');assert.equal((await focus()).quiet,true);
+      await swipe({direction:y>max/2?-1:1,cancel:true});await checkReturn(selector);
+      assert.equal((await focus()).ring,'none');assert.equal((await focus()).quiet,true);
+      assert.equal(await saved(),raw);
+      await page.setViewportSize({width:390,height:844});
+    });
+  }
+  for(const [route,selector] of cases){
     await step(route+' '+selector+' returns keyboard focus with a visible ring',async()=>{
       await nav(route);await page.locator(selector).first().focus();await page.keyboard.press('Enter');
       await page.keyboard.press('Escape');await checkReturn(selector);
       const f=await focus();assert.equal(f.quiet,false);assert.equal(f.ring,'solid');assert.equal(f.width,'3px');
     });
   }
+  await step('touch scroll, keyboard Tab/Shift+Tab, and touch again switch indicators without losing focus',async()=>{
+    await nav('settings');const selector='[data-action="personalize"]';
+    await page.locator(selector).tap();await dismiss();await swipe();
+    assert.equal((await focus()).quiet,true);
+    await page.keyboard.press('Tab');assert.equal((await focus()).quiet,false);assert.equal((await focus()).ring,'solid');
+    await page.keyboard.press('Shift+Tab');await checkReturn(selector);assert.equal((await focus()).ring,'solid');
+    await page.locator(selector).tap();await dismiss();await swipe();
+    await checkReturn(selector);assert.equal((await focus()).ring,'none');assert.equal((await focus()).quiet,true);
+  });
+  await step('focus departure clears only the old pointer marker and editable fields remain visible',async()=>{
+    const selector='[data-action="personalize"]';
+    await page.locator(selector).tap();
+    assert.equal(await page.locator(selector).getAttribute('data-pointer-focus'),null);
+    await page.locator('[name="recipient"]').tap();
+    assert.equal((await focus()).tag,'INPUT');assert.equal((await focus()).quiet,false);assert.equal((await focus()).ring,'solid');
+    await page.locator('[name="dedication"]').tap();
+    assert.equal((await focus()).tag,'TEXTAREA');assert.equal((await focus()).quiet,false);assert.equal((await focus()).ring,'solid');
+    await dismiss();
+  });
+  await step('non-pointer activation keeps dialog semantics, initial title focus, and the original return target',async()=>{
+    await nav('settings');await page.keyboard.press('Tab');
+    await page.locator('[data-action="backup"]').dispatchEvent('click',{detail:0});
+    assert.equal(await page.locator('#modal').getAttribute('aria-labelledby'),'modal-title');
+    assert.equal((await focus()).id,'modal-title');
+    await page.locator('#modal [data-action="close"]').first().dispatchEvent('click',{detail:0});
+    await checkReturn('[data-action="backup"]');assert.equal((await focus()).quiet,false);
+  });
   await step('typing then pointer cancellation does not leave an inherited keyboard ring',async()=>{
     await nav('settings');await page.locator('[data-action="personalize"]').tap();
     await page.locator('[name="recipient"]').pressSequentially('no save');
-    await dismiss();await checkReturn('[data-action="personalize"]');assert.equal((await focus()).ring,'none');assert.equal(await saved(),raw);
+    await dismiss();await checkReturn('[data-action="personalize"]');await swipe();assert.equal((await focus()).ring,'none');assert.equal((await focus()).quiet,true);assert.equal(await saved(),raw);
   });
   await step('background render while a sheet is open resolves the replacement trigger',async()=>{
     await page.locator('[data-action="backup"]').tap();
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
-    await dismiss();await checkReturn('[data-action="backup"]');
+    await dismiss();await checkReturn('[data-action="backup"]');await swipe();assert.equal((await focus()).quiet,true);assert.equal((await focus()).ring,'none');
   });
   await step('nested detail/edit cancellation returns to the original wish row',async()=>{
     await nav('wishes');const selector='.wish-main[data-id="'+habit.id+'"]';
-    await page.locator(selector).tap();await page.locator('[data-action="edit"]').tap();await dismiss();await checkReturn(selector);
+    await page.locator(selector).tap();await page.locator('[data-action="edit"]').tap();await dismiss();await checkReturn(selector);await swipe();assert.equal((await focus()).quiet,true);assert.equal((await focus()).ring,'none');
+  });
+  await step('nested wish deletion cancel and update-to-backup sheets keep their first touch opener quiet',async()=>{
+    await nav('wishes');const selector='.wish-main[data-id="'+habit.id+'"]';
+    await page.locator(selector).tap();await page.locator('[data-action="delete-confirm"]').tap();await dismiss();await swipe();
+    await checkReturn(selector);assert.equal((await focus()).quiet,true);assert.equal((await focus()).ring,'none');
+    await nav('settings');await page.locator('[data-action="updates"]').tap();await page.locator('#modal [data-action="backup"]').tap();await dismiss();await swipe();
+    await checkReturn('[data-action="updates"]');assert.equal((await focus()).quiet,true);assert.equal((await focus()).ring,'none');
+    assert.equal(await saved(),raw);
   });
   await step('saving settings returns focus after full DOM replacement',async()=>{
     await nav('settings');await page.locator('[data-action="personalize"]').focus();await page.keyboard.press('Enter');

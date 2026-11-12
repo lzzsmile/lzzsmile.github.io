@@ -81,3 +81,24 @@ test('garden duplicate action identities retain the same visual control after re
   const replacement=h.element({action:'detail',id:'wish-1'});replacement.className='check-button done';
   h.run('close()');assert.equal(h.document.activeElement,replacement);
 });
+
+
+test('garden repeated touch starts and canceled gestures do not clear a restored focus marker',()=>{
+  const h=harness();h.listeners.pointerdown();h.run('lastPageTrigger=trigger;show("sheet");close()');
+  for(let i=0;i<3;i++)h.listeners.pointerdown();
+  assert.equal(h.document.activeElement,h.trigger);assert.equal(h.trigger.pointerFocus,true);
+});
+test('garden real focus departure removes the pointer marker only from that control',()=>{
+  const h=harness();h.listeners.pointerdown();h.run('lastPageTrigger=trigger;show("sheet");close()');
+  h.listeners.focusout({target:h.trigger});assert.equal(h.trigger.pointerFocus,false);
+});
+test('garden a pointer return does not suppress editable field focus',()=>{
+  const h=harness();h.trigger.matches=()=>false;h.listeners.pointerdown();h.run('restoreControlFocus(trigger)');
+  assert.equal(h.document.activeElement,h.trigger);assert.equal(h.trigger.pointerFocus,false);
+});
+test('garden pointer focus survives a page render and switches back with keyboard input',()=>{
+  const h=harness();h.listeners.pointerdown();h.run('lastPageTrigger=trigger;show("sheet");close();saved=rememberFocus(trigger)');
+  h.trigger.isConnected=false;const next=h.element({action:'personalize'});h.run('restorePageFocus(saved)');
+  h.listeners.pointerdown();assert.equal(next.pointerFocus,true);
+  h.listeners.keydown({key:'Tab',shiftKey:true});assert.equal(next.pointerFocus,false);
+});

@@ -1,4 +1,6 @@
-export const AVATAR_PRESETS=Object.freeze({friend:'温柔伙伴',cat:'小猫',bunny:'小兔'});
+// Legacy IDs remain valid so existing records and backups are never rejected or rewritten on read.
+const LEGACY_AVATAR_PRESETS=Object.freeze({friend:'温柔伙伴',cat:'小猫',bunny:'小兔'});
+export const DEFAULT_AVATAR=Object.freeze({type:'preset',id:'friend'});
 export const MAX_AVATAR_DATA_URL_LENGTH=350*1024;
 // Parse dimensions without decoding pixels. All offsets and segment sizes are bounded.
 export function photoHeaderDimensions(bytes,mime){
@@ -73,7 +75,7 @@ export function isValidPhotoDataUrl(value){
 export function isValidAvatar(avatar){
   if(!avatar||typeof avatar!=='object'||Array.isArray(avatar)||!Object.hasOwn(avatar,'type'))return false;
   const keys=Object.keys(avatar);
-  if(avatar.type==='preset')return keys.length===2&&Object.hasOwn(avatar,'id')&&typeof avatar.id==='string'&&Object.hasOwn(AVATAR_PRESETS,avatar.id);
+  if(avatar.type==='preset')return keys.length===2&&Object.hasOwn(avatar,'id')&&typeof avatar.id==='string'&&Object.hasOwn(LEGACY_AVATAR_PRESETS,avatar.id);
   return avatar.type==='photo'&&keys.length===2&&Object.hasOwn(avatar,'dataUrl')&&isValidPhotoDataUrl(avatar.dataUrl);
 }
 export const STORAGE_KEY='starwish-garden:data:v1';
