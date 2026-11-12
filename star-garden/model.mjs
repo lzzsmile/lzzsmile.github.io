@@ -81,7 +81,16 @@ export const BACKUP_KEY='starwish-garden:before-import:v1';
 export const MAX_BACKUP_BYTES=32*1024*1024;
 export const MAX_ENTRIES=20000;
 export const CATEGORIES={self:{label:'好好爱自己',color:'rose',icon:'flower'},life:{label:'生活的小美好',color:'sage',icon:'leaf'},together:{label:'我们的时光',color:'amber',icon:'spark'}};
-export const ENDINGS={hug:{title:'星光拥抱',subtitle:'让星星替我抱抱你',stamp:'被星光拥抱'},dance:{title:'花园舞会',subtitle:'为这一刻跳一支小舞',stamp:'花园里的小舞会'},fireworks:{title:'专属烟花',subtitle:'把你的名字写进夜空',stamp:'为你亮起的烟花'}};
+export const ENDINGS={
+  hug:{icon:'heart',title:'星光拥抱',subtitle:'把温暖一圈圈传给你',stamp:'被星光拥抱'},
+  dance:{icon:'flower',title:'花园舞会',subtitle:'轻点节拍，一起转个圈',stamp:'花园里的小舞会'},
+  fireworks:{icon:'spark',title:'专属烟花',subtitle:'亲手点亮这一片夜空',stamp:'为你亮起的烟花'},
+  meteor:{icon:'spark',title:'流星许愿',subtitle:'把心愿交给一场流星雨',stamp:'流星捎来的祝福'},
+  bloom:{icon:'flower',title:'繁花盛放',subtitle:'轻轻浇水，让花海绽放',stamp:'为你盛开的花海'},
+  lanterns:{icon:'sun',title:'心愿天灯',subtitle:'放飞一盏暖暖的祝福',stamp:'飞向星空的心愿'},
+  bubbles:{icon:'heart',title:'彩虹泡泡',subtitle:'戳破泡泡，收集小惊喜',stamp:'装满快乐的泡泡'},
+  aurora:{icon:'leaf',title:'极光漫游',subtitle:'拨动星光，换一片天空',stamp:'一起看过的极光'}
+};
 export const uid=()=>globalThis.crypto?.randomUUID?.()||`g-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 export function localDate(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 export function emptyState(now=new Date().toISOString()) {return {version:1,createdAt:now,updatedAt:now,settings:{recipient:'',companion:'陪伴者',dedication:'愿你喜欢的事，都慢慢开花。',birthday:'',shirt:'#a2b79b'},wishes:[],stamps:[],pending:[]};}

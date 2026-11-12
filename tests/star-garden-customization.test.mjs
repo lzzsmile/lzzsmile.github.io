@@ -35,9 +35,9 @@ test('photo input bounds and centered crop accept normal iPhone 12MP images',()=
 test('photo preparation locally crops and revokes URLs on success and decode errors',async()=>{
   const original={Image:globalThis.Image,document:globalThis.document,create:URL.createObjectURL,revoke:URL.revokeObjectURL};let revoked=0,draw;
   URL.createObjectURL=()=> 'blob:local';URL.revokeObjectURL=()=>revoked++;
-  globalThis.Image=class {naturalWidth=4032;naturalHeight=3024;set src(value){queueMicrotask(()=>this.onload());}};
+  globalThis.Image=class {naturalWidth=4032;naturalHeight=3024;set src(value){if(value)queueMicrotask(()=>this.onload?.());}};
   globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(...args){draw=args;}}),toDataURL:()=>jpeg})};
-  try {assert.equal(await prepareCompanionPhoto(new Blob([jpegBytes(4032,3024)],{type:'image/jpeg'})),jpeg);assert.deepEqual(draw.slice(1),[504,0,3024,3024,0,0,512,512]);assert.equal(revoked,1);globalThis.Image=class {set src(value){queueMicrotask(()=>this.onerror());}};await assert.rejects(prepareCompanionPhoto(new Blob([pngBytes()],{type:'image/png'})),/无法读取/);assert.equal(revoked,2);}finally{globalThis.Image=original.Image;globalThis.document=original.document;URL.createObjectURL=original.create;URL.revokeObjectURL=original.revoke;}
+  try {assert.equal(await prepareCompanionPhoto(new Blob([jpegBytes(4032,3024)],{type:'image/jpeg'})),jpeg);assert.deepEqual(draw.slice(1),[256,0,1536,1536,0,0,512,512]);assert.equal(revoked,1);globalThis.Image=class {set src(value){if(value)queueMicrotask(()=>this.onerror?.());}};await assert.rejects(prepareCompanionPhoto(new Blob([pngBytes()],{type:'image/png'})),/无法读取/);assert.equal(revoked,2);}finally{globalThis.Image=original.Image;globalThis.document=original.document;URL.createObjectURL=original.create;URL.revokeObjectURL=original.revoke;}
 });
 
 test('photo preparation rejects mismatched content before creating an object URL',async()=>{await assert.rejects(prepareCompanionPhoto(new Blob(['<svg/>'],{type:'image/jpeg'})),/内容与格式不符/);});
