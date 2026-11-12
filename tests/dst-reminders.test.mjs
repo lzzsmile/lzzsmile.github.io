@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 function exportInZone(timezone, date, reminders, repeat='none', years=1) {
  const [year,month,day]=date.split('-').map(Number);
  const event={id:'dst-test',title:'DST reminder',calendar:'solar',year,month,day,repeat,reminders};
- const source=`import {makeICS} from ${JSON.stringify(new URL('../calendar.js',import.meta.url).href)};process.stdout.write(makeICS(${JSON.stringify([event])},{from:${JSON.stringify(date)},years:${years},now:new Date('2027-01-01T00:00:00Z')}));`;
+ const source=`import {makeICS} from ${JSON.stringify(new URL('../days-matter/calendar.js',import.meta.url).href)};process.stdout.write(makeICS(${JSON.stringify([event])},{from:${JSON.stringify(date)},years:${years},now:new Date('2027-01-01T00:00:00Z')}));`;
  const ics=execFileSync(process.execPath,['--input-type=module','-e',source],{env:{...process.env,TZ:timezone},encoding:'utf8'});
  assert.doesNotMatch(ics,/TRIGGER;(?:RELATED|TZID)/);
  assert.match(ics,new RegExp(`DTSTART;VALUE=DATE:${date.replaceAll('-','')}`));

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MAX_BACKUP_BYTES, createBackup, validateBackup} from '../calendar.js';
+import {MAX_BACKUP_BYTES, createBackup, validateBackup} from '../days-matter/calendar.js';
 
 const event = (id, note = '') => ({
   id, title: '备份往返验证', calendar: 'solar', year: 2026, month: 11, day: 6,

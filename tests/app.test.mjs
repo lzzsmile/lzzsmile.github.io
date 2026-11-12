@@ -2,25 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
+const read=name=>readFileSync(new URL('../days-matter/'+name,import.meta.url),'utf8');
 const app=read('app.js'), calendar=read('calendar.js'), html=read('index.html');
 const exports=[...calendar.matchAll(/export (?:function|const) (\w+)/g)].map(m=>m[1]).concat('MAX_YEAR','MAX_EVENTS');
 const event=(id,patch={})=>({id,title:id,calendar:'solar',year:2024,month:12,day:18,repeat:'annual',pinned:false,...patch});
 const backup=events=>JSON.stringify({version:1,app:'days-matter',exportedAt:'2026-01-01T00:00:00Z',events});
 // Small DOM double: executes the actual app and event handlers, without pretending to test browser layout.
-function harness(initial=[],{raw=backup(initial),failWrite=false,appURL='https://example.test/niannian/'}={}){
+function harness(initial=[],{raw=backup(initial),failWrite=false,appURL='https://example.test/niannian/',legacy=null,locks=true,failRead=false}={}){
  const KEY='niannian.days.v1:'+new URL('./',appURL).pathname;
- const nodes=new Map(), listeners={},writes=[],downloads=[];let saved=raw;
+ const nodes=new Map(), listeners={},windowListeners={},writes=[],downloads=[];let saved=raw,legacyRaw=legacy;let lockTail=Promise.resolve();
  function node(selector){if(!nodes.has(selector)){const handlers={};nodes.set(selector,{innerHTML:'',textContent:'',value:'',hidden:false,checked:false,disabled:false,open:false,dataset:{},options:[],classList:{add(){},remove(){},toggle(){}},setAttribute(){},focus(){},add(option){this.options.push(option);},addEventListener(type,fn){(handlers[type]??=[]).push(fn);},async emit(type,event={}){for(const fn of handlers[type]??[])await fn({target:this,preventDefault(){},...event});},showModal(){this.open=true;},close(){this.open=false;},reset(){}});}return nodes.get(selector);}
  for(const match of html.matchAll(/\bid="([^"]+)"/g))node('#'+match[1]);
  const elements={};for(const match of html.matchAll(/\bname="([^"]+)"/g))elements[match[1]]=node('#'+match[1]);
  elements.category.options=[{value:'纪念日'}];node('#event-form').elements=elements;
- const context=vm.createContext({TextEncoder,URL,document:{baseURI:appURL,querySelector:node,querySelectorAll:()=>[],addEventListener(type,fn){(listeners[type]??=[]).push(fn);}},window:{addEventListener(){}},navigator:{onLine:true},localStorage:{getItem(key){assert.equal(key,KEY);return saved;},setItem(key,value){assert.equal(key,KEY);if(failWrite)throw Error('quota');writes.push(value);saved=value;}},crypto:{randomUUID:()=> 'new-id'},Option:function(text,value){return {text,value};},setTimeout:()=>0,clearTimeout(){},setInterval(){}});
+ const context=vm.createContext({TextEncoder,URL,document:{baseURI:appURL,querySelector:node,querySelectorAll:()=>[],addEventListener(type,fn){(listeners[type]??=[]).push(fn);}},window:{addEventListener(type,fn){(windowListeners[type]??=[]).push(fn);}},navigator:{onLine:true,...(locks?{locks:{request(name,callback){assert.equal(name,KEY);const result=lockTail.then(callback);lockTail=result.catch(()=>{});return result;}}}:{})},localStorage:{getItem(key){if(failRead)throw Error('storage disabled');if(key==='niannian.days.v1:/'&&KEY!==key)return legacyRaw;assert.equal(key,KEY);return saved;},setItem(key,value){assert.equal(key,KEY);if(failWrite)throw Error('quota');writes.push(value);saved=value;}},crypto:{randomUUID:()=> 'new-id'},Option:function(text,value){return {text,value};},setTimeout:()=>0,clearTimeout(){},setInterval(){}});
  vm.runInContext(`Object.assign(globalThis,(()=>{${calendar.replace(/\bexport /g,'')}\nreturn {${exports.join(',')}};})());`,context);
  vm.runInContext(app.replace(/^import .*?;\n/,''),context);
  const run=source=>vm.runInContext(source,context);
  context.captureDownload=(...args)=>downloads.push(args);run('download=captureDownload');
- return {node,run,writes,downloads,get saved(){return saved;},async emit(type,event){for(const fn of listeners[type]??[])await fn(event);}};
+ return {node,run,writes,downloads,get saved(){return saved;},get legacy(){return legacyRaw;},replaceSaved(value){saved=value;},replaceLegacy(value){legacyRaw=value;},async emitWindow(type,event){for(const fn of windowListeners[type]??[])await fn(event);},async emit(type,event){for(const fn of listeners[type]??[])await fn(event);}};
 }
 test('all special-focus dates render, remain pinned, and do not duplicate in ordinary list',()=>{
  const h=harness([event('first',{pinned:true}),event('second',{pinned:true}),event('ordinary')]);
@@ -153,4 +153,81 @@ test('large frequent calendar export is blocked before download and can be reduc
  h.run('prepareExport(events)');assert.equal(h.node('#download-calendar').disabled,true);assert.match(h.node('#export-error').textContent,/20,000/);
  h.run('prepareExport([events[0]])');assert.equal(h.node('#download-calendar').disabled,false);
  await h.node('#download-calendar').emit('click');assert.equal(h.downloads.length,1);assert.equal(h.writes.length,0);
+});
+
+const movedURL='https://example.test/days-matter/';
+test('path migration never writes on startup, preview, cancellation or download',async()=>{
+ const raw=backup([event('legacy',{calendar:'lunar',month:8,day:15,reminders:[{daysBefore:3,time:'09:00'}]})]);
+ const h=harness([],{appURL:movedURL,raw:null,legacy:raw});
+ assert.equal(h.saved,null);assert.equal(h.writes.length,0);assert.equal(h.node('#migration-banner').hidden,false);
+ await h.node('#review-legacy').emit('click');assert.equal(h.node('#migration-dialog').open,true);assert.match(h.node('#migration-preview').textContent,/1 个日子.*legacy/);assert.equal(h.node('#copy-legacy').disabled,false);
+ h.run("close($('#migration-dialog'))");assert.equal(h.saved,null);assert.equal(h.legacy,raw);
+ await h.node('#review-legacy').emit('click');await h.node('#download-legacy').emit('click');
+ assert.equal(h.downloads[0][0],raw);assert.equal(h.writes.length,0);
+});
+test('explicit migration copies exact validated bytes once and preserves the old key',async()=>{
+ const raw=backup([event('old',{year:2025,calendar:'lunar',month:6,day:1,leapMonth:true,pinned:true,reminders:[{daysBefore:1,time:'08:00'}]})]);
+ const h=harness([],{appURL:movedURL,raw:null,legacy:raw});await h.node('#review-legacy').emit('click');
+ await Promise.all([h.node('#copy-legacy').emit('click'),h.node('#copy-legacy').emit('click')]);
+ assert.equal(h.saved,raw);assert.equal(h.legacy,raw);assert.equal(h.writes.length,1);assert.equal(h.node('#migration-banner').hidden,true);
+ assert.equal(h.run('events[0].year'),2025);assert.equal(h.run('events[0].leapMonth'),true);
+});
+test('migration never overwrites populated, empty or malformed destination data',async()=>{
+ for(const current of [backup([event('new')]),backup([]),'malformed']){
+  const raw=backup([event('old')]),h=harness([],{appURL:movedURL,raw:current,legacy:raw});
+  await h.node('#review-legacy').emit('click');assert.equal(h.node('#copy-legacy').disabled,true);
+  await h.node('#copy-legacy').emit('click');assert.equal(h.saved,current);assert.equal(h.legacy,raw);assert.equal(h.writes.length,0);
+ }
+});
+test('migration rejects source or target changes after preview',async()=>{
+ for(const change of ['source','target']){
+  const raw=backup([event('old')]),newer=backup([event('newer')]),h=harness([],{appURL:movedURL,raw:null,legacy:raw});
+  await h.node('#review-legacy').emit('click');if(change==='source')h.replaceLegacy(newer);else h.replaceSaved(newer);
+  await h.node('#copy-legacy').emit('click');assert.equal(h.writes.length,0);assert.equal(h.saved,change==='target'?newer:null);assert.equal(h.legacy,change==='source'?newer:raw);
+ }
+});
+test('invalid source is downloadable but never copied; unavailable storage is explained',async()=>{
+ const h=harness([],{appURL:movedURL,raw:null,legacy:'damaged bytes'});await h.node('#review-legacy').emit('click');
+ assert.equal(h.node('#copy-legacy').disabled,true);await h.node('#download-legacy').emit('click');assert.equal(h.downloads[0][0],'damaged bytes');
+ await h.node('#copy-legacy').emit('click');assert.equal(h.saved,null);assert.equal(h.legacy,'damaged bytes');assert.equal(h.writes.length,0);
+ const blocked=harness([],{appURL:movedURL,raw:null,failRead:true});await blocked.node('#review-legacy').emit('click');assert.match(blocked.node('#migration-preview').textContent,/无法访问/);assert.equal(blocked.writes.length,0);
+});
+test('no legacy source, no lock support and quota failures leave all records untouched',async()=>{
+ for(const option of [{legacy:null},{legacy:backup([event('old')]),locks:false},{legacy:backup([event('old')]),failWrite:true}]){
+  const h=harness([],{appURL:movedURL,raw:null,...option});await h.node('#review-legacy').emit('click');await h.node('#copy-legacy').emit('click');
+  assert.equal(h.saved,null);assert.equal(h.legacy,option.legacy);assert.equal(h.writes.length,0);assert.ok(h.node('#migration-error').textContent);
+ }
+});
+test('queued ordinary saves reject stale snapshots, including a refreshed snapshot',async()=>{
+ const first=backup([event('old')]),newer=backup([event('newer')]),h=harness([],{raw:first});
+ const pending=h.run('persist([{...events[0],pinned:true}])');h.replaceSaved(newer);h.run('readStorage()');
+ assert.equal(await pending,false);assert.equal(h.saved,newer);assert.equal(h.writes.length,0);
+});
+test('new-app saves and explicit migration share one lock and cannot replace each other',async()=>{
+ for(const order of ['save-first','copy-first']){
+  const raw=backup([event('old')]),h=harness([],{appURL:movedURL,raw:null,legacy:raw});await h.node('#review-legacy').emit('click');
+  let save,copy;if(order==='save-first'){save=h.run('persist([])');copy=h.node('#copy-legacy').emit('click');}else{copy=h.node('#copy-legacy').emit('click');save=h.run('persist([])');}
+  await Promise.all([save,copy]);assert.equal(h.writes.length,1);assert.equal(h.legacy,raw);
+  assert.equal(JSON.parse(h.saved).events.length,order==='save-first'?0:1);
+ }
+});
+test('old-record migration is only offered on the canonical Days Matter path',async()=>{
+ const h=harness([],{appURL:'https://example.test/another-app/',raw:null,legacy:backup([event('old')])});
+ assert.equal(h.node('#legacy-backup-section').hidden,true);assert.equal(h.node('#migration-banner').hidden,true);assert.equal(h.writes.length,0);
+});
+
+test('storage events never authorize saving a stale open editor or import preview',async()=>{
+ const newer=backup([event('first',{note:'new content'})]);
+ const edit=harness([event('first')]);edit.run('openEditor(events[0])');edit.replaceSaved(newer);await edit.emitWindow('storage',{key:edit.run('KEY')});
+ await edit.node('#event-form').emit('submit');assert.equal(edit.saved,newer);assert.equal(edit.writes.length,0);assert.match(edit.node('#form-error').textContent,/草稿仍在/);
+ const importing=harness([event('first')]);await importing.node('#backup-button').emit('click');
+ const file={size:500,async text(){return backup([event('replacement')]);}};importing.node('#backup-file').files=[file];await importing.node('#backup-file').emit('change');
+ importing.replaceSaved(newer);await importing.emitWindow('storage',{key:importing.run('KEY')});await importing.node('#confirm-import').emit('click');
+ assert.equal(importing.saved,newer);assert.equal(importing.writes.length,0);
+});
+test('deletion of a selected record in another tab does not crash detail actions',async()=>{
+ for(const action of ['#delete-event','#edit-event']){
+  const h=harness([event('first')]);h.run("showDetail('first')");h.replaceSaved(backup([]));await h.emitWindow('storage',{key:h.run('KEY')});
+  await h.node(action).emit('click');assert.equal(h.node('#detail-dialog').open,false);assert.equal(h.node('#event-dialog').open,false);assert.equal(h.writes.length,0);
+ }
 });

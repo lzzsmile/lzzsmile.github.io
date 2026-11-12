@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeEvent,nextOccurrence,listOccurrences,lunarToSolar,solarToLunar,createBackup,validateBackup,makeICS,addDays} from '../calendar.js';
+import {normalizeEvent,nextOccurrence,listOccurrences,lunarToSolar,solarToLunar,createBackup,validateBackup,makeICS,addDays} from '../days-matter/calendar.js';
 const event=(patch={})=>({id:'repeat',title:'重复日子',calendar:'solar',year:2024,month:1,day:31,repeat:'monthly',...patch});
 const dates=(e,from,years=1)=>listOccurrences(e,{from,years}).map(o=>o.date);
 test('all repeat modes validate and preserve backup v1, legacy defaults remain unchanged',()=>{

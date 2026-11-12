@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const source=readFileSync(new URL('../calendar.js',import.meta.url),'utf8');
+const source=readFileSync(new URL('../days-matter/calendar.js',import.meta.url),'utf8');
 const C=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const event=(patch={})=>({id:'test_1',title:'测试日',calendar:'solar',year:2024,month:2,day:29,repeat:'annual',...patch});
 test('lunar capability and known New Years 2024–2030',()=>{assert.equal(C.lunarCapability(),true);['2024-02-10','2025-01-29','2026-02-17','2027-02-06','2028-01-26','2029-02-13','2030-02-03'].forEach((iso,i)=>{assert.equal(C.lunarToSolar(2024+i,1,1),iso);assert.deepEqual(C.solarToLunar(iso),{year:2024+i,month:1,day:1,leapMonth:false});});});

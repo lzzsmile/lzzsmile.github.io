@@ -1,6 +1,7 @@
 // Run from any directory: node tools/bump-version.mjs 1.2.5
 import {readFileSync,writeFileSync} from 'node:fs';
-const root=new URL('../',import.meta.url);
+const root=new URL('../days-matter/',import.meta.url);
+const repo=new URL('../',import.meta.url);
 const read=path=>readFileSync(new URL(path,root),'utf8');
 const write=(path,data)=>writeFileSync(new URL(path,root),data);
 const next=process.argv[2];
@@ -15,5 +16,6 @@ for(const path of ['index.html','app.js','sw.js']){
   write(path,content);
 }
 write('release.json',JSON.stringify({version:next,date:new Date().toISOString().slice(0,10)})+'\n');
-const pkg=JSON.parse(read('package.json'));pkg.version=next;write('package.json',JSON.stringify(pkg,null,2)+'\n');
+const pkg=JSON.parse(readFileSync(new URL('package.json',repo),'utf8'));pkg.version=next;writeFileSync(new URL('package.json',repo),JSON.stringify(pkg,null,2)+'\n');
+writeFileSync(new URL('release.json',repo),read('release.json')); // Old open tabs can discover the new release.
 console.log(`Prepared ${next}. Run npm test, then upload all changed files together.`);

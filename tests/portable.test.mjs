@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, existsSync} from 'node:fs';
 import vm from 'node:vm';
 
-const docs = new URL('../', import.meta.url);
+const docs = new URL('../days-matter/', import.meta.url);
 const read = name => readFileSync(new URL(name, docs), 'utf8');
 const source = read('sw.js');
 const html = read('index.html');
