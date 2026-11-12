@@ -1,7 +1,7 @@
 /* Isolated by directory, cache namespace and request allowlist. Never removes another app's cache. */
 const BASE=new URL('./',self.location.href).href;
 const PREFIX=`starwish-garden:${BASE}:`;
-const CACHE=PREFIX+'v0.2.0';
+const CACHE=PREFIX+'v0.2.1';
 const ASSETS=['./','./index.html','./style.css','./app.mjs','./model.mjs','./art.mjs','./manifest.webmanifest','./assets/icon.svg','./assets/icon-192.png','./assets/icon-512.png','./assets/apple-touch-icon.png'].map(p=>new URL(p,BASE).href);
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
