@@ -45,20 +45,20 @@ export function shiftMonth(month,delta){
  const d=new Date(month+'-01T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+delta);
  const next=d.toISOString().slice(0,7);return isDate(next+'-01')?next:null;
 }
-function validTask(t){return keys(t,['id','title','note','schedule','startDate','date','createdAt','archived'])&&id(t.id)&&str(t.title,60)&&t.title.trim().length>0&&str(t.note,300)&&['once','daily','weekdays'].includes(t.schedule)&&isDate(t.startDate)&&(t.schedule==='once'?isDate(t.date)&&t.date>=t.startDate:t.date===null)&&iso(t.createdAt)&&typeof t.archived==='boolean';}
+function validTask(t){return keys(t,['id','title','note','schedule','startDate','date','createdAt','archived'],['deletedAt'])&&(!Object.hasOwn(t,'deletedAt')||iso(t.deletedAt))&&id(t.id)&&str(t.title,60)&&t.title.trim().length>0&&str(t.note,300)&&['once','daily','weekdays'].includes(t.schedule)&&isDate(t.startDate)&&(t.schedule==='once'?isDate(t.date)&&t.date>=t.startDate:t.date===null)&&iso(t.createdAt)&&typeof t.archived==='boolean';}
 export function addTask(s,input,now=new Date().toISOString()){
  if(!object(input)||Object.hasOwn(input,'note')&&!str(input.note,300))fail('请检查事项内容。');
- if(s.tasks.length>=200)fail('最多可以保存 200 件事，请先导出备份。');
+ if(s.tasks.length>=200)fail('最多可以保存 200 件事（包括归档和已删除事项），请先导出备份。');
  const startDate=input.startDate??localDate(new Date(now));
  const task={id:uid(),title:typeof input.title==='string'?input.title.trim():'',note:typeof input.note==='string'?input.note.trim():'',schedule:input.schedule??'daily',startDate,date:(input.schedule??'daily')==='once'?(input.date??startDate):null,createdAt:now,archived:false};
  if(!validTask(task))fail('请检查名称、日期与重复方式（名称 1–60 字，备注不超过 300 字）。');
  touch(s,now);s.tasks.push(task);return task;
 }
 export function isScheduled(task,date){if(!isDate(date)||date<task.startDate)return false;if(task.schedule==='once')return task.date===date;if(task.schedule==='weekdays'){const d=new Date(`${date}T12:00:00Z`).getUTCDay();return d>0&&d<6;}return task.schedule==='daily';}
-export function tasksForDate(s,date=localDate()){if(!isDate(date))fail('日期无效。');return s.tasks.filter(t=>isScheduled(t,date)&&(!t.archived||s.entries.some(e=>e.taskId===t.id&&e.date===date)));}
+export function tasksForDate(s,date=localDate()){if(!isDate(date))fail('日期无效。');return s.tasks.filter(t=>!t.deletedAt&&isScheduled(t,date)&&(!t.archived||s.entries.some(e=>e.taskId===t.id&&e.date===date)));}
 export function chooseInteraction(previous=null,rng=Math.random){const options=Object.keys(INTERACTIONS).filter(k=>k!==previous);const value=rng();if(!Number.isFinite(value)||value<0||value>=1)fail('随机数无效。');return options[Math.floor(value*options.length)];}
 export function checkIn(s,taskId,date=localDate(),note='',now=new Date(),rng=Math.random){
- const t=s.tasks.find(t=>t.id===taskId);if(!t||t.archived)fail('这件事已收起或不存在。');
+ const t=s.tasks.find(t=>t.id===taskId);if(!t||t.archived||t.deletedAt)fail('这件事已删除、收起或不存在。');
  if(!(now instanceof Date)||!Number.isFinite(now.getTime())||!isDate(date)||date>localDate(now))fail('只能记录今天或过去的日子。');
  if(!isScheduled(t,date))fail('这一天没有安排这件事。');
  if(s.entries.some(e=>e.taskId===taskId&&e.date===date))fail('这件事当天已经完成了。');
@@ -70,7 +70,17 @@ export function checkIn(s,taskId,date=localDate(),note='',now=new Date(),rng=Mat
 }
 export function finishInteraction(s,entryId,now=new Date().toISOString()){const e=s.entries.find(e=>e.id===entryId);if(!e)fail('这一步已经撤销或不存在。');if(!iso(now))fail();if(!e.completedAt){e.completedAt=now;touch(s,now);}return e;}
 export function undoEntry(s,entryId,now=new Date().toISOString()){const index=s.entries.findIndex(e=>e.id===entryId);if(index<0)fail('这一步已经撤销或不存在。');if(!iso(now))fail();const [entry]=s.entries.splice(index,1);touch(s,now);return entry;}
-export function archiveTask(s,taskId,archived=true,now=new Date().toISOString()){const t=s.tasks.find(t=>t.id===taskId);if(!t||typeof archived!=='boolean')fail('这件事不存在。');if(!iso(now))fail();t.archived=archived;touch(s,now);return t;}
+export function archiveTask(s,taskId,archived=true,now=new Date().toISOString()){const t=s.tasks.find(t=>t.id===taskId);if(!t||t.deletedAt||typeof archived!=='boolean')fail('这件事已删除或不存在。');if(!iso(now))fail();t.archived=archived;touch(s,now);return t;}
+// Soft deletion retains the task referenced by every historical entry and backup.
+// Keep archived unchanged so restoration returns to the exact prior schedule state.
+export function deleteTask(s,taskId,now=new Date().toISOString()){
+ const t=s.tasks.find(t=>t.id===taskId);if(!t||t.deletedAt)fail('这件事已删除或不存在。');
+ if(!iso(now))fail('时间格式不正确。');t.deletedAt=now;touch(s,now);return t;
+}
+export function restoreTask(s,taskId,now=new Date().toISOString()){
+ const t=s.tasks.find(t=>t.id===taskId);if(!t?.deletedAt)fail('这件事已恢复或不存在。');
+ if(!iso(now))fail('时间格式不正确。');delete t.deletedAt;touch(s,now);return t;
+}
 export function history(s,date){if(date!==undefined&&!isDate(date))fail('日期无效。');return s.entries.filter(e=>date===undefined||e.date===date).map((entry,index)=>({entry,index})).sort((a,b)=>b.entry.date.localeCompare(a.entry.date)||b.entry.at.localeCompare(a.entry.at)||b.index-a.index).map(x=>x.entry);}
 export function stats(s,date=localDate()){return {total:s.entries.length,today:s.entries.filter(e=>e.date===date).length,days:new Set(s.entries.map(e=>e.date)).size,active:tasksForDate(s,date).filter(t=>!t.archived).length};}
 export function validateState(s){

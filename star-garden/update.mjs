@@ -1,5 +1,5 @@
 // Release metadata must change together with sw.js. Legacy data stays untouched; new daily data uses its own v2 key.
-export const APP_VERSION='0.5.6';
+export const APP_VERSION='0.5.7';
 // No storage writes, cache deletion, unregistering, or unsolicited page reloads here.
 export function createUpdater({navigator:nav=globalThis.navigator,window:win=globalThis.window,document:doc=globalThis.document,onChange=()=>{},reload=()=>win.location.reload(),canReload=()=>true,timeout=15000}={}){
   const status={supported:Boolean(nav.serviceWorker),checking:false,available:false,applying:false,offlineReady:false,checked:false,error:''};

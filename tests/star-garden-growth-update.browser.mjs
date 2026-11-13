@@ -48,11 +48,11 @@ try{
   served=current;await page.evaluate(async()=>{await(await navigator.serviceWorker.getRegistration()).update();});await page.waitForFunction(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting));
   assert.equal(await page.evaluate(()=>new Promise(resolve=>{const c=new MessageChannel();c.port1.onmessage=e=>resolve(e.data.version);navigator.serviceWorker.controller.postMessage({type:'GET_VERSION'},[c.port2]);})),'0.4.2');assert.deepEqual(await snapshot(page),initial);
   await nav('settings');await page.locator('[data-action="updates"]').first().click();await available();await page.locator('#modal [data-action="apply-update"]').click();
-  await page.locator('.profile-card').waitFor();assert.deepEqual(await snapshot(page),initial);
+  await page.locator('.profile-card').waitFor();await page.locator('[data-action="confirm-migration"]').waitFor();assert.deepEqual(await snapshot(page),{...initial,'starwish-garden:growth:migration-prompt:v1':'seen'});
  });
- await step('migration previews and cancellation do not write; only explicit confirmation creates v2',async()=>{
-  await page.locator('[data-action="migrate"]').first().click();await page.locator('[data-action="preview-migration"]').click();assert.deepEqual(await snapshot(page),initial);await dismiss();assert.deepEqual(await snapshot(page),initial);
-  await page.locator('[data-action="migrate"]').first().click();await page.locator('[data-action="preview-migration"]').click();await page.locator('[data-action="confirm-migration"]').click();await page.waitForFunction(k=>!!localStorage.getItem(k),GROWTH_KEY);await page.waitForFunction(()=>!document.querySelector('#modal').open);
+ await step('first migration prompt cancels without changing records; one confirmation creates v2',async()=>{
+  const prompted={...initial,'starwish-garden:growth:migration-prompt:v1':'seen'};assert.deepEqual(await snapshot(page),prompted);await dismiss();assert.deepEqual(await snapshot(page),prompted);
+  await page.locator('[data-action="backup"]').click();await page.locator('[data-action="migrate"]').click();await page.locator('[data-action="confirm-migration"]').click();await page.waitForFunction(k=>!!localStorage.getItem(k),GROWTH_KEY);await page.waitForFunction(()=>!document.querySelector('#modal').open);
   const all=await snapshot(page);for(const [k,v]of Object.entries(initial))assert.equal(all[k],v);
   const growth=JSON.parse(all[GROWTH_KEY]);assert.equal(growth.entries.length,1);assert.deepEqual(growth.legacy.source,state);assert.equal(all['starwish-garden:growth:legacy-snapshot:v1'],initial[STORAGE_KEY]);
  });
