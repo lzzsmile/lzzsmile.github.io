@@ -35,9 +35,9 @@ const state=emptyState('2026-11-01T12:00:00Z');state.settings.recipient='升级�
 const initial={[STORAGE_KEY]:JSON.stringify(state),[BACKUP_KEY]:JSON.stringify(state),'starwish-garden:last-deleted:v1':JSON.stringify(state),'other-app-data':'must stay'};
 const snapshot=p=>p.evaluate(()=>Object.fromEntries(Object.entries(localStorage)));
 const nav=async(name,p=page)=>p.locator('.tabbar [data-view="'+name+'"]').click();
-const updates=async(p=page)=>{await nav('settings',p);await p.locator('.settings-row[data-action="updates"]').click();};
+const updates=async(p=page)=>{await nav('settings',p);await p.locator('.settings-footer').waitFor();};
 const dismiss=async(p=page)=>{await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#modal').open);};
-const available=async(p=page)=>{await p.locator('#modal [data-action="apply-update"]').waitFor({state:'visible',timeout:20000});};
+const available=async(p=page)=>{await p.locator('.settings-footer [data-action="apply-update"]').waitFor({state:'visible',timeout:20000});};
 try{
  await step('historical 0.4.2 worker installs synthetic v1 and recovery records',async()=>{
   await page.goto(base);await page.evaluate(async data=>{for(const [k,v]of Object.entries(data))localStorage.setItem(k,v);await navigator.serviceWorker.ready;await caches.open('other-app-cache');},initial);
@@ -47,12 +47,11 @@ try{
  await step('complete hashed current release waits until explicit update; v1 remains untouched',async()=>{
   served=current;await page.evaluate(async()=>{await(await navigator.serviceWorker.getRegistration()).update();});await page.waitForFunction(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting));
   assert.equal(await page.evaluate(()=>new Promise(resolve=>{const c=new MessageChannel();c.port1.onmessage=e=>resolve(e.data.version);navigator.serviceWorker.controller.postMessage({type:'GET_VERSION'},[c.port2]);})),'0.4.2');assert.deepEqual(await snapshot(page),initial);
-  await nav('settings');await page.locator('[data-action="updates"]').first().click();await available();await page.locator('#modal [data-action="apply-update"]').click();
+  await nav('settings');await page.locator('[data-action="updates"]').first().click();await page.locator('#modal [data-action="apply-update"]').waitFor({state:'visible',timeout:20000});await page.locator('#modal [data-action="apply-update"]').click();
   await page.locator('.profile-card').waitFor();await page.locator('[data-action="confirm-migration"]').waitFor();assert.deepEqual(await snapshot(page),{...initial,'starwish-garden:growth:migration-prompt:v1':'seen'});
  });
- await step('first migration prompt cancels without changing records; one confirmation creates v2',async()=>{
-  const prompted={...initial,'starwish-garden:growth:migration-prompt:v1':'seen'};assert.deepEqual(await snapshot(page),prompted);await dismiss();assert.deepEqual(await snapshot(page),prompted);
-  await page.locator('[data-action="backup"]').click();await page.locator('[data-action="migrate"]').click();await page.locator('[data-action="confirm-migration"]').click();await page.waitForFunction(k=>!!localStorage.getItem(k),GROWTH_KEY);await page.waitForFunction(()=>!document.querySelector('#modal').open);
+ await step('first migration prompt waits without changing records; one confirmation creates v2',async()=>{
+  const prompted={...initial,'starwish-garden:growth:migration-prompt:v1':'seen'};assert.deepEqual(await snapshot(page),prompted);await page.locator('[data-action="confirm-migration"]').click();await page.waitForFunction(k=>!!localStorage.getItem(k),GROWTH_KEY);await page.waitForFunction(()=>!document.querySelector('#modal').open);
   const all=await snapshot(page);for(const [k,v]of Object.entries(initial))assert.equal(all[k],v);
   const growth=JSON.parse(all[GROWTH_KEY]);assert.equal(growth.entries.length,1);assert.deepEqual(growth.legacy.source,state);assert.equal(all['starwish-garden:growth:legacy-snapshot:v1'],initial[STORAGE_KEY]);
  });
@@ -61,12 +60,15 @@ try{
   await context.setOffline(true);await page.reload();await page.locator('.profile-card').waitFor();assert.deepEqual(await snapshot(page),migrated);await updates();assert.match(await page.locator('.settings-version').innerText(),new RegExp(APP_VERSION.replaceAll('.','\\.')));await dismiss();await context.setOffline(false);
  });
  await step('incomplete next release cannot activate and retains complete offline current shell',async()=>{
-  served=future(futureVersion);broken='growth-interactions.mjs';await updates();await page.locator('[data-action="check-update"]').click();await page.waitForFunction(()=>document.querySelector('[data-update-status]').textContent.match(/未能|未下载/));assert.equal(await page.locator('#modal [data-action="apply-update"]').isVisible(),false);assert.deepEqual(await snapshot(page),migrated);
+  served=future(futureVersion);broken='growth-interactions.mjs';await updates();await page.locator('[data-action="check-update"]').click();await page.waitForFunction(()=>document.querySelector('[data-update-status]').textContent.match(/未能|未下载/));assert.equal(await page.locator('.settings-footer [data-action="apply-update"]').isVisible(),false);assert.deepEqual(await snapshot(page),migrated);
   await dismiss();await context.setOffline(true);await page.reload();await page.locator('.profile-card').waitFor();assert.deepEqual(await snapshot(page),migrated);await context.setOffline(false);broken='';
  });
  const editor=await context.newPage();await editor.goto(base+'#settings');await editor.locator('[data-action="personalize"]').click();await editor.locator('[name="recipient"]').fill('尚未保存的称呼');
  await step('complete future release waits for consent and preserves another-tab draft',async()=>{
-  await updates();await page.locator('[data-action="check-update"]').click();await available();assert.equal(await editor.locator('[name="recipient"]').inputValue(),'尚未保存的称呼');assert.deepEqual(await snapshot(page),migrated);
+  await updates();const check=page.locator('.settings-footer [data-action="check-update"]');await check.focus();await check.press('Enter');await available();await page.waitForFunction(()=>document.querySelector('.settings-footer [data-action="check-update"]').getAttribute('aria-disabled')==='false');assert.equal(await check.evaluate(el=>el===document.activeElement),true);assert.equal(await editor.locator('[name="recipient"]').inputValue(),'尚未保存的称呼');assert.deepEqual(await snapshot(page),migrated);
+ });
+ await step('footer update cannot activate while a dialog is open',async()=>{
+  await page.locator('.settings-row[data-action="backup"]').click();await page.locator('.settings-footer [data-action="apply-update"]').evaluate(el=>el.click());assert.equal(await page.locator('#modal').evaluate(el=>el.open),true);assert.match(await page.locator('#toast').innerText(),/先保存或关闭/);assert.equal(await page.evaluate(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting)),true);assert.deepEqual(await snapshot(page),migrated);await dismiss();
  });
  await step('global notice is visible on all pages, can be deferred, and remains reachable',async()=>{
   await dismiss();for(const v of ['today','journey','settings']){await nav(v);await page.locator('.update-banner').waitFor();assert.equal(await page.locator('[data-update-entry] button').isVisible(),true);assert.match(await page.locator('.tabbar [data-view="settings"]').getAttribute('aria-label'),/新版本/);}
@@ -78,7 +80,7 @@ try{
   await page.locator('[data-update-entry] button').click();await available();assert.deepEqual(await snapshot(page),migrated);
  });
  await step('explicit future update reloads only requester, preserving draft and every stored key',async()=>{
-  await page.locator('#modal [data-action="apply-update"]').click();await page.waitForFunction(()=>!document.querySelector('#modal').open);await nav('settings');await page.locator('.profile-card').waitFor();await updates();await page.waitForFunction(v=>document.querySelector('.settings-version')?.textContent.includes(v),futureVersion);
+  await page.locator('.settings-footer [data-action="apply-update"]').click();await page.waitForFunction(()=>!document.querySelector('#modal').open);await nav('settings');await page.locator('.profile-card').waitFor();await updates();await page.waitForFunction(v=>document.querySelector('.settings-version')?.textContent.includes(v),futureVersion);
   assert.deepEqual(await snapshot(page),migrated);assert.equal(await editor.locator('[name="recipient"]').inputValue(),'尚未保存的称呼');assert.equal(await editor.locator('#modal').evaluate(e=>e.open),true);await editor.locator('[data-update-entry] [data-action="updates"]').waitFor({state:'attached'});
   assert.equal(await page.evaluate(async()=> (await caches.keys()).includes('other-app-cache')),true);
   // This page already has the new worker, but remains on its old document until it chooses to update.

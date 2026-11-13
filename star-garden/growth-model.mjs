@@ -48,7 +48,7 @@ export function shiftMonth(month,delta){
 function validTask(t){return keys(t,['id','title','note','schedule','startDate','date','createdAt','archived'],['deletedAt'])&&(!Object.hasOwn(t,'deletedAt')||iso(t.deletedAt))&&id(t.id)&&str(t.title,60)&&t.title.trim().length>0&&str(t.note,300)&&['once','daily','weekdays'].includes(t.schedule)&&isDate(t.startDate)&&(t.schedule==='once'?isDate(t.date)&&t.date>=t.startDate:t.date===null)&&iso(t.createdAt)&&typeof t.archived==='boolean';}
 export function addTask(s,input,now=new Date().toISOString()){
  if(!object(input)||Object.hasOwn(input,'note')&&!str(input.note,300))fail('请检查事项内容。');
- if(s.tasks.length>=200)fail('最多可以保存 200 件事（包括归档和已删除事项），请先导出备份。');
+ if(s.tasks.length>=200)fail('最多可以保存 200 件事（包括归档事项），请先导出备份。');
  const startDate=input.startDate??localDate(new Date(now));
  const task={id:uid(),title:typeof input.title==='string'?input.title.trim():'',note:typeof input.note==='string'?input.note.trim():'',schedule:input.schedule??'daily',startDate,date:(input.schedule??'daily')==='once'?(input.date??startDate):null,createdAt:now,archived:false};
  if(!validTask(task))fail('请检查名称、日期与重复方式（名称 1–60 字，备注不超过 300 字）。');
@@ -71,25 +71,34 @@ export function checkIn(s,taskId,date=localDate(),note='',now=new Date(),rng=Mat
 export function finishInteraction(s,entryId,now=new Date().toISOString()){const e=s.entries.find(e=>e.id===entryId);if(!e)fail('这一步已经撤销或不存在。');if(!iso(now))fail();if(!e.completedAt){e.completedAt=now;touch(s,now);}return e;}
 export function undoEntry(s,entryId,now=new Date().toISOString()){const index=s.entries.findIndex(e=>e.id===entryId);if(index<0)fail('这一步已经撤销或不存在。');if(!iso(now))fail();const [entry]=s.entries.splice(index,1);touch(s,now);return entry;}
 export function archiveTask(s,taskId,archived=true,now=new Date().toISOString()){const t=s.tasks.find(t=>t.id===taskId);if(!t||t.deletedAt||typeof archived!=='boolean')fail('这件事已删除或不存在。');if(!iso(now))fail();t.archived=archived;touch(s,now);return t;}
-// Soft deletion retains the task referenced by every historical entry and backup.
-// Keep archived unchanged so restoration returns to the exact prior schedule state.
+// Delete only the task definition. Completed steps already contain their own
+// title/date/note/interaction snapshots and remain valid without a live task.
 export function deleteTask(s,taskId,now=new Date().toISOString()){
- const t=s.tasks.find(t=>t.id===taskId);if(!t||t.deletedAt)fail('这件事已删除或不存在。');
- if(!iso(now))fail('时间格式不正确。');t.deletedAt=now;touch(s,now);return t;
-}
-export function restoreTask(s,taskId,now=new Date().toISOString()){
- const t=s.tasks.find(t=>t.id===taskId);if(!t?.deletedAt)fail('这件事已恢复或不存在。');
- if(!iso(now))fail('时间格式不正确。');delete t.deletedAt;touch(s,now);return t;
+ const index=s.tasks.findIndex(t=>t.id===taskId);if(index<0)fail('这件事已删除或不存在。');
+ if(!iso(now))fail('时间格式不正确。');const [task]=s.tasks.splice(index,1);
+ for(const entry of s.entries)if(entry.taskId===taskId)entry.taskDeleted=true;
+ touch(s,now);return task;
 }
 export function history(s,date){if(date!==undefined&&!isDate(date))fail('日期无效。');return s.entries.filter(e=>date===undefined||e.date===date).map((entry,index)=>({entry,index})).sort((a,b)=>b.entry.date.localeCompare(a.entry.date)||b.entry.at.localeCompare(a.entry.at)||b.index-a.index).map(x=>x.entry);}
 export function stats(s,date=localDate()){return {total:s.entries.length,today:s.entries.filter(e=>e.date===date).length,days:new Set(s.entries.map(e=>e.date)).size,active:tasksForDate(s,date).filter(t=>!t.archived).length};}
 export function validateState(s){
  safeTree(s);if(!keys(s,['version','createdAt','updatedAt','settings','tasks','entries','lastInteraction','legacy'])||s.version!==2||!iso(s.createdAt)||!iso(s.updatedAt)||!Array.isArray(s.tasks)||s.tasks.length>200||!Array.isArray(s.entries)||s.entries.length>MAX_ENTRIES||!(s.lastInteraction===null||Object.hasOwn(INTERACTIONS,s.lastInteraction)))fail();
  const p=s.settings;if(!keys(p,['recipient','companion','dedication','birthday','shirt'],['avatar','companionConfigured'])||Object.hasOwn(p,'companionConfigured')&&typeof p.companionConfigured!=='boolean'||!str(p.recipient,30)||!str(p.companion,30)||!str(p.dedication,160)||!(p.birthday===''||typeof p.birthday==='string'&&/^\d{2}-\d{2}$/.test(p.birthday)&&isDate(`2024-${p.birthday}`))||!/^#[0-9a-fA-F]{6}$/.test(p.shirt)||Object.hasOwn(p,'avatar')&&!isValidAvatar(p.avatar))fail();
- const ids=new Set(),pairs=new Set(),taskMap=new Map();for(const t of s.tasks){if(!validTask(t)||ids.has(t.id))fail();ids.add(t.id);taskMap.set(t.id,t);}
- for(const e of s.entries){const t=taskMap.get(e.taskId),pair=`${e.taskId}|${e.date}`;if(!keys(e,['id','taskId','title','date','at','note','interaction','completedAt'])||!id(e.id)||ids.has(e.id)||!t||!str(e.title,60)||!e.title.trim()||!isDate(e.date)||!isScheduled(t,e.date)||pairs.has(pair)||!iso(e.at)||!str(e.note,300)||!Object.hasOwn(INTERACTIONS,e.interaction)||!(e.completedAt===null||iso(e.completedAt)))fail();ids.add(e.id);pairs.add(pair);}
+ const ids=new Set(),pairs=new Set(),deletedIds=new Set(),taskMap=new Map();for(const t of s.tasks){if(!validTask(t)||ids.has(t.id))fail();ids.add(t.id);taskMap.set(t.id,t);}
+ for(const e of s.entries){
+  const t=taskMap.get(e.taskId),pair=`${e.taskId}|${e.date}`;
+  if(!keys(e,['id','taskId','title','date','at','note','interaction','completedAt'],['taskDeleted'])||!id(e.id)||!id(e.taskId)||ids.has(e.id)||!str(e.title,60)||!e.title.trim()||!isDate(e.date)||pairs.has(pair)||!iso(e.at)||!str(e.note,300)||!Object.hasOwn(INTERACTIONS,e.interaction)||!(e.completedAt===null||iso(e.completedAt)))fail();
+  if(t){if(Object.hasOwn(e,'taskDeleted')||!isScheduled(t,e.date))fail();}
+  else {if(e.taskDeleted!==true)fail();deletedIds.add(e.taskId);}
+  ids.add(e.id);pairs.add(pair);
+ }
+ for(const deletedId of deletedIds)if(ids.has(deletedId))fail();
  if(s.legacy!==null){if(!keys(s.legacy,['version','migratedAt','source'])||s.legacy.version!==1||!iso(s.legacy.migratedAt))fail();validateV1(s.legacy.source);}
- return structuredClone(s);
+ // v0.5.7 kept recoverable task definitions. Normalize a clone, never the
+ // caller or stored bytes. An explicit later save/export uses this clean form.
+ const next=structuredClone(s),removed=new Set(next.tasks.filter(t=>t.deletedAt).map(t=>t.id));
+ if(removed.size){next.tasks=next.tasks.filter(t=>!removed.has(t.id));for(const entry of next.entries)if(removed.has(entry.taskId))entry.taskDeleted=true;}
+ return next;
 }
 export function migrateV1(source,now=new Date().toISOString()){
  safeTree(source);const old=validateV1(source);now=new Date(now).toISOString();const s=emptyState(now);s.settings={companionConfigured:hasConfiguredCompanion(old.settings),recipient:old.settings.recipient,companion:old.settings.companion,dedication:old.settings.dedication,birthday:old.settings.birthday,shirt:old.settings.shirt,...(old.settings.avatar?{avatar:structuredClone(old.settings.avatar)}:{})};s.legacy={version:1,migratedAt:now,source:old};

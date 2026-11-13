@@ -32,7 +32,7 @@ const quiet=async(action,record)=>{const f=await focusState();assert.equal(f.act
 try{
  const f=fixture();checkIn(f.s,f.b.id,today,'已完成的备注');await seed(f.s);
  await step('Safari-style unfocused touch opening returns to the actual page control on every page',async()=>{
-  const cases=[['today','[data-action="task-detail"]','task-detail'],['today','.section-heading [data-action="new-task"]','new-task'],['journey','.journey-checklist [data-action="new-task"]','new-task'],['settings','[data-action="personalize"]','personalize'],['settings','[data-action="manage-tasks"]','manage-tasks'],['settings','[data-action="backup"]','backup'],['settings','[data-action="updates"]','updates']];
+  const cases=[['today','[data-action="task-detail"]','task-detail'],['today','.section-heading [data-action="new-task"]','new-task'],['journey','.journey-checklist [data-action="new-task"]','new-task'],['settings','[data-action="personalize"]','personalize'],['settings','[data-action="manage-tasks"]','manage-tasks'],['settings','[data-action="backup"]','backup']];
   for(const [view,selector,action]of cases){await nav(view);await pointerOpen(selector);await dismiss();await quiet(action);}
   await snap('touch-return-settings-390');
  });

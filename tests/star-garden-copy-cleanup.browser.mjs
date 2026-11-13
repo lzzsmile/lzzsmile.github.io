@@ -46,7 +46,7 @@ try{
   assert.match(await page.locator('.companion-presence').innerText(),/用户写下的这段话必须完整保留/);assert.match(await page.locator('.task-list').first().innerText(),/用户的小提醒/);
   await page.locator('.completed-list [data-action="entry"]').first().click();assert.match(await page.locator('#modal').innerText(),/用户的完成记录备注/);await page.locator('[data-action="confirm-undo"]').click();assert.match(await page.locator('#modal').innerText(),/其他事项和记录都不受影响/);await dismiss();
   await nav('settings');await page.locator('[data-action="manage-tasks"]').click();assert.match(await page.locator('#modal').innerText(),/已有足迹不会删除/);await dismiss();
-  await page.locator('[data-action="backup"]').click();assert.match(await page.locator('#modal').innerText(),/未加密/);assert.match(await page.locator('#modal').innerText(),/不要通过删除主屏幕 App 或清理网站数据来更新/);await dismiss();
+  await page.locator('[data-action="backup"]').click();assert.match(await page.locator('#modal').innerText(),/未加密/);assert.match(await page.locator('#modal').innerText(),/导入前会先预览并请你确认/);assert.equal(await page.locator('#modal [data-action="export"],#modal #import-file').count(),2);assert.equal(await page.locator('#modal [data-action="restore-previous"],#modal [data-action="export-safety"],#modal [data-action="migrate"],#modal [data-action="legacy-archive"]').count(),0);await dismiss();
   await page.locator('[data-action="personalize"]').click();assert.match(await page.locator('#modal').innerText(),/照片仅在本机裁剪和保存/);await page.locator('[name="recipient"]').fill('取消的草稿');await dismiss();assert.equal(await raw(),before);
  });
  await step('concise pages stay usable at 320, 390 and 1280 pixels',async()=>{
