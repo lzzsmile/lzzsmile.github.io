@@ -1,5 +1,5 @@
-// Release metadata must change together with sw.js. Data/backup versions stay at v1.
-export const APP_VERSION='0.4.2';
+// Release metadata must change together with sw.js. Legacy data stays untouched; new daily data uses its own v2 key.
+export const APP_VERSION='0.5.6';
 // No storage writes, cache deletion, unregistering, or unsolicited page reloads here.
 export function createUpdater({navigator:nav=globalThis.navigator,window:win=globalThis.window,document:doc=globalThis.document,onChange=()=>{},reload=()=>win.location.reload(),canReload=()=>true,timeout=15000}={}){
   const status={supported:Boolean(nav.serviceWorker),checking:false,available:false,applying:false,offlineReady:false,checked:false,error:''};
@@ -80,6 +80,8 @@ export function createUpdater({navigator:nav=globalThis.navigator,window:win=glo
   function apply(){
     if(status.applying)return;
     if(!status.available){void check();return;}
+    // Recheck before activation as well as before reload: a draft may have opened since the notice.
+    if(!canReload()){fail('请先保存或关闭当前编辑，再更新。已保存的记录保持不变。');return;}
     status.applying=true;status.error='';emit();
     if(registration?.waiting){
       applyTimer=setTimeout(()=>{status.applying=false;fail('更新尚未完成，请稍后重试。不要删除 App，当前记录保持不变。');},timeout);

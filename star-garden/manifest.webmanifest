@@ -1,13 +1,13 @@
 {
   "name": "星愿花园",
   "short_name": "星愿花园",
-  "description": "让喜欢的事慢慢开花",
+  "description": "每一个完成，都向前一步",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f6f4",
-  "theme_color": "#f6f6f4",
+  "background_color": "#f8f9f2",
+  "theme_color": "#f8f9f2",
   "lang": "zh-CN",
   "icons": [
     {

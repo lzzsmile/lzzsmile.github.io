@@ -26,7 +26,7 @@ test('pageshow foreground and online trigger checks without forcing reload',asyn
 const root=new URL('../star-garden/',import.meta.url);
 test('release hashes cover every current shell resource and versions match',async()=>{
  const source=await readFile(new URL('sw.js',root),'utf8');const version=/const VERSION='([^']+)'/.exec(source)[1];assert.equal(version,APP_VERSION);
- const entries=JSON.parse(/const ASSET_ENTRIES=(\[.*\]);/.exec(source)[1]);assert.equal(entries.length,16);
+ const entries=JSON.parse(/const ASSET_ENTRIES=(\[.*\]);/.exec(source)[1]);assert.equal(entries.length,22);assert.ok(entries.some(([path])=>path==='./home-companion.mjs'));
  for(const [path,hash]of entries){const bytes=await readFile(new URL(path==='./'?'./index.html':path,root));assert.equal(hash,'sha256-'+createHash('sha256').update(bytes).digest('base64'),path);}
  assert.match(source,/cache:'reload',integrity:/);assert.doesNotMatch(source,/localStorage|indexedDB|unregister/);
  const client=await readFile(new URL('update.mjs',root),'utf8');assert.doesNotMatch(client,/localStorage|sessionStorage|caches\.delete|unregister\(/);
@@ -36,13 +36,16 @@ test('worker only cleans its own cache after successful install and activates by
  const source=await readFile(new URL('sw.js',root),'utf8');
  const self={location:{href:base+'sw.js',origin:'https://example.test'},addEventListener:(n,f)=>handlers[n]=f,skipWaiting:async()=>activated++,clients:{claim:async()=>{}}};
  vm.runInNewContext(source,{self,URL,Response,Request,Map,fetch,caches:{open:async()=>({addAll:async r=>added.push(...r)}),keys:async()=>['other-app','starwish-garden:https://other.test/star-garden/:v1',`starwish-garden:${base}:v0.4.0`],delete:async k=>deleted.push(k)}});
- let work;handlers.install({waitUntil:p=>work=p});await work;assert.equal(activated,0);assert.equal(added.length,16);assert(added.every(r=>r.cache==='reload'&&r.integrity.startsWith('sha256-')));
+ let work;handlers.install({waitUntil:p=>work=p});await work;assert.equal(activated,0);assert.equal(added.length,22);assert(added.every(r=>r.cache==='reload'&&r.integrity.startsWith('sha256-')));
  handlers.message({data:{type:'SKIP_WAITING'},waitUntil:p=>work=p});await work;assert.equal(activated,1);
  handlers.activate({waitUntil:p=>work=p});await work;assert.deepEqual(deleted,[`starwish-garden:${base}:v0.4.0`]);
 });
 
-test('activation after leaving update dialog preserves a newly opened editor',async()=>{const f=fixture({canReload:()=>false});f.registration.waiting=f.worker;await f.updater.check();f.updater.apply();f.sw.emit('controllerchange');assert.equal(f.counts().reloads,0);assert.equal(f.updater.status.applying,false);assert.equal(f.updater.status.available,true);});
+test('activation after leaving update dialog preserves a newly opened editor',async()=>{let safe=true;const f=fixture({canReload:()=>safe});f.registration.waiting=f.worker;await f.updater.check();f.updater.apply();safe=false;f.sw.emit('controllerchange');assert.equal(f.counts().reloads,0);assert.equal(f.updater.status.applying,false);assert.equal(f.updater.status.available,true);});
 test('normal replacement of a previously activated worker is not an install failure',async()=>{const f=fixture();const worker=new Events();worker.state='installing';f.registration.installing=worker;await f.updater.start();worker.state='activated';worker.emit('statechange');worker.state='redundant';worker.emit('statechange');assert.equal(f.updater.status.error,'');});
 
 test('a superseded complete waiting worker does not masquerade as failed download',async()=>{const f=fixture();const worker=new Events();worker.state='installed';f.registration.installing=worker;await f.updater.start();worker.state='redundant';worker.emit('statechange');assert.equal(f.updater.status.error,'');});
 test('offline check can still recognize already installed offline resources',async()=>{const f=fixture({online:false});f.sw.getRegistration=async()=>f.registration;await f.updater.check();assert.equal(f.updater.status.offlineReady,true);assert.equal(f.counts().registered,0);assert.equal(f.updater.status.checked,false);});
+
+test('waiting update never activates while an editor or save is busy',async()=>{let safe=false;const f=fixture({canReload:()=>safe});f.registration.waiting=f.worker;await f.updater.check();f.updater.apply();assert.equal(f.counts().skip,0);assert.equal(f.counts().reloads,0);assert.equal(f.updater.status.applying,false);assert.match(f.updater.status.error,/保存或关闭/);safe=true;f.updater.apply();assert.equal(f.counts().skip,1);f.sw.emit('controllerchange');assert.equal(f.counts().reloads,1);});
+test('already activated update respects editor guard before direct reload',async()=>{let safe=false;const f=fixture({canReload:()=>safe});await f.updater.start();f.sw.controller={...f.worker,postMessage:f.worker.postMessage};f.sw.emit('controllerchange');f.updater.apply();assert.equal(f.counts().reloads,0);assert.equal(f.updater.status.applying,false);assert.match(f.updater.status.error,/保存或关闭/);safe=true;f.updater.apply();assert.equal(f.counts().reloads,1);});
